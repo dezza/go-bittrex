@@ -3,8 +3,10 @@ package bittrex
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"github.com/thebotguys/signalr"
 )
 
@@ -19,7 +21,6 @@ type Fill struct {
 	Timestamp jTime
 }
 
-// ExchangeState contains fills and order book updates for a market.
 type ExchangeState struct {
 	MarketName string
 	Nounce     int
@@ -29,9 +30,23 @@ type ExchangeState struct {
 	Initial    bool
 }
 
-// doAsyncTimeout runs f in a different goroutine
-//	if f returns before timeout elapses, doAsyncTimeout returns the result of f().
-//	otherwise it returns "operation timeout" error, and calls tmFunc after f returns.
+type SummaryState struct {
+	MarketName string
+	High       decimal.Decimal
+	Low        decimal.Decimal
+	Last       decimal.Decimal
+	Volume     decimal.Decimal
+	BaseVolume decimal.Decimal
+	Bid        decimal.Decimal
+	Ask        decimal.Decimal
+	Created    string
+}
+
+type ExchangeDelta struct {
+	Nounce uint64
+	Deltas []SummaryState
+}
+
 func doAsyncTimeout(f func() error, tmFunc func(error), timeout time.Duration) error {
 	errs := make(chan error)
 	go func() {
@@ -44,6 +59,7 @@ func doAsyncTimeout(f func() error, tmFunc func(error), timeout time.Duration) e
 			}
 		}
 	}()
+
 	select {
 	case err := <-errs:
 		return err
@@ -52,75 +68,115 @@ func doAsyncTimeout(f func() error, tmFunc func(error), timeout time.Duration) e
 	}
 }
 
-func sendStateAsync(dataCh chan<- ExchangeState, st ExchangeState) {
-	select {
-	case dataCh <- st:
-	default:
-	}
-}
-
 func subForMarket(client *signalr.Client, market string) (json.RawMessage, error) {
 	_, err := client.CallHub(WS_HUB, "SubscribeToExchangeDeltas", market)
 	if err != nil {
 		return json.RawMessage{}, err
 	}
+
 	return client.CallHub(WS_HUB, "QueryExchangeState", market)
 }
 
-func parseStates(messages []json.RawMessage, dataCh chan<- ExchangeState, market string) {
+func parseStates(messages []json.RawMessage, dataCh chan<- ExchangeState, markets map[string]bool) error {
 	for _, msg := range messages {
 		var st ExchangeState
 		if err := json.Unmarshal(msg, &st); err != nil {
-			continue
+			return err
 		}
-		if st.MarketName != market {
-			continue
+
+		if _, ok := markets[st.MarketName]; ok {
+			dataCh <- st
 		}
-		sendStateAsync(dataCh, st)
 	}
+
+	return nil
 }
 
-// SubscribeExchangeUpdate subscribes for updates of the market.
-// Updates will be sent to dataCh.
-// To stop subscription, send to, or close 'stop'.
-func (b *Bittrex) SubscribeExchangeUpdate(market string, dataCh chan<- ExchangeState, stop <-chan bool) error {
+func parseDeltas(messages []json.RawMessage, dataCh chan<- SummaryState, markets map[string]bool) error {
+	for _, msg := range messages {
+		var d ExchangeDelta
+		if err := json.Unmarshal(msg, &d); err != nil {
+			return err
+		}
+
+		for _, v := range d.Deltas {
+			if _, ok := markets[v.MarketName]; ok {
+				dataCh <- v
+			}
+		}
+	}
+
+	return nil
+}
+
+func (b *Bittrex) SubscribeSummaryUpdate(markets []string, dataCh chan<- SummaryState, stop <-chan bool) error {
 	const timeout = 5 * time.Second
+	m := make(map[string]bool, len(markets))
+	for _, market := range markets {
+		m[market] = false
+	}
+
 	client := signalr.NewWebsocketClient()
 	client.OnClientMethod = func(hub string, method string, messages []json.RawMessage) {
-		if hub != WS_HUB || method != "updateExchangeState" {
+		if hub != WS_HUB || method != "updateSummaryState" {
 			return
 		}
-		parseStates(messages, dataCh, market)
-	}
-	err := doAsyncTimeout(func() error {
-		return client.Connect("https", WS_BASE, []string{WS_HUB})
-	}, func(err error) {
-		if err == nil {
-			client.Close()
-		}
-	}, timeout)
-	if err != nil {
-		return err
+
+		parseDeltas(messages, dataCh, m)
 	}
 	defer client.Close()
-	var msg json.RawMessage
-	err = doAsyncTimeout(func() error {
-		var err error
-		msg, err = subForMarket(client, market)
-		return err
-	}, nil, timeout)
-	if err != nil {
+
+	connect := func() error { return client.Connect("https", WS_BASE, []string{WS_HUB}) }
+	handleErr := func(err error) {
+		fmt.Println(err.Error())
+	}
+
+	if err := doAsyncTimeout(connect, handleErr, timeout); err != nil {
 		return err
 	}
-	var st ExchangeState
-	if err = json.Unmarshal(msg, &st); err != nil {
-		return err
-	}
-	st.Initial = true
-	sendStateAsync(dataCh, st)
+
 	select {
 	case <-stop:
 	case <-client.DisconnectedChannel:
 	}
 	return nil
+}
+
+// SubscribeExchangeUpdate subscribes for updates of the market.
+// Updates will be sent to dataCh.
+// To stop subscription, send to, or close 'stop'.
+func (b *Bittrex) SubscribeExchangeUpdate(markets []string, dataCh chan<- ExchangeState, stop <-chan bool) error {
+	const timeout = 5 * time.Second
+	m := make(map[string]bool, len(markets))
+	for _, market := range markets {
+		m[market] = false
+	}
+
+	client := signalr.NewWebsocketClient()
+	client.OnClientMethod = func(hub string, method string, messages []json.RawMessage) {
+		if hub != WS_HUB || method != "updateExchangeState" {
+			return
+		}
+
+		parseStates(messages, dataCh, m)
+	}
+	defer client.Close()
+
+	connect := func() error { return client.Connect("https", WS_BASE, []string{WS_HUB}) }
+	handleErr := func(err error) {
+		if err == nil {
+			client.Close()
+		}
+	}
+
+	if err := doAsyncTimeout(connect, handleErr, timeout); err != nil {
+		return err
+	}
+
+	select {
+	case <-stop:
+		return nil
+	case <-client.DisconnectedChannel:
+		return nil
+	}
 }

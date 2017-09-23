@@ -1,36 +1,81 @@
 package bittrex
 
 import (
-	"errors"
 	"testing"
 	"time"
 )
 
+const (
+	API_KEY    = ""
+	API_SECRET = ""
+
+	MSG_COUNT = 10
+	TIMEOUT   = 60 //seconds
+)
+
+var markets = []string{"USDT-BTC", "USDT-ETH"}
+
 func TestBittrexSubscribeOrderBook(t *testing.T) {
-	bt := New("", "")
+	bt := New(API_KEY, API_SECRET)
 	ch := make(chan ExchangeState, 16)
 	errCh := make(chan error)
+	stopCh := make(chan bool)
+
 	go func() {
-		var haveInit bool
 		var msgNum int
-		for st := range ch {
-			haveInit = haveInit || st.Initial
+
+		for msg := range ch {
+			t.Logf("Msg: %v\n", msg.MarketName)
 			msgNum++
-			if msgNum >= 3 {
+			if msgNum >= MSG_COUNT {
+				t.Log("Stopping")
+				stopCh <- true
 				break
 			}
 		}
-		if haveInit {
-			errCh <- nil
-		} else {
-			errCh <- errors.New("no initial message")
+	}()
+
+	go func() {
+		errCh <- bt.SubscribeExchangeUpdate(markets, ch, stopCh)
+	}()
+
+	select {
+	case <-time.After(time.Second * TIMEOUT):
+		stopCh <- true
+		t.Error("timeout")
+	case err := <-errCh:
+		if err != nil {
+			t.Error(err)
+		}
+	}
+}
+
+func TestBittrexSubscribeSummaries(t *testing.T) {
+	bt := New(API_KEY, API_SECRET)
+	ch := make(chan SummaryState, 16)
+	errCh := make(chan error)
+	stopCh := make(chan bool)
+
+	go func() {
+		var msgNum int
+		for msg := range ch {
+			t.Logf("Msg: %v\n", msg.MarketName)
+			msgNum++
+			if msgNum >= MSG_COUNT {
+				t.Log("Stopping")
+				stopCh <- true
+				break
+			}
 		}
 	}()
+
 	go func() {
-		errCh <- bt.SubscribeExchangeUpdate("USDT-BTC", ch, nil)
+		errCh <- bt.SubscribeSummaryUpdate(markets, ch, stopCh)
 	}()
+
 	select {
-	case <-time.After(time.Second * 6):
+	case <-time.After(time.Second * TIMEOUT):
+		stopCh <- true
 		t.Error("timeout")
 	case err := <-errCh:
 		if err != nil {
