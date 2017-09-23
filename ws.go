@@ -32,15 +32,18 @@ type ExchangeState struct {
 }
 
 type SummaryState struct {
-	MarketName string
-	High       decimal.Decimal
-	Low        decimal.Decimal
-	Last       decimal.Decimal
-	Volume     decimal.Decimal
-	BaseVolume decimal.Decimal
-	Bid        decimal.Decimal
-	Ask        decimal.Decimal
-	Created    string
+	MarketName     string
+	High           decimal.Decimal
+	Low            decimal.Decimal
+	Last           decimal.Decimal
+	Volume         decimal.Decimal
+	BaseVolume     decimal.Decimal
+	Bid            decimal.Decimal
+	Ask            decimal.Decimal
+	OpenBuyOrders  int
+	OpenSellOrders int
+	TimeStamp      string
+	Created        string
 }
 
 type ExchangeDelta struct {
