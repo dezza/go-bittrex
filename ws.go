@@ -21,6 +21,7 @@ type Fill struct {
 	Timestamp jTime
 }
 
+// ExchangeState contains fills and order book updates for a market.
 type ExchangeState struct {
 	MarketName string
 	Nounce     int
@@ -47,6 +48,9 @@ type ExchangeDelta struct {
 	Deltas []SummaryState
 }
 
+// doAsyncTimeout runs f in a different goroutine
+//	if f returns before timeout elapses, doAsyncTimeout returns the result of f().
+//	otherwise it returns "operation timeout" error, and calls tmFunc after f returns.
 func doAsyncTimeout(f func() error, tmFunc func(error), timeout time.Duration) error {
 	errs := make(chan error)
 	go func() {
