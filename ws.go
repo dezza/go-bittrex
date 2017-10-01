@@ -180,6 +180,28 @@ func (b *Bittrex) SubscribeExchangeUpdate(markets []string, dataCh chan<- Exchan
 		return err
 	}
 
+	var st ExchangeState
+	sub := func() error {
+		var msg json.RawMessage
+		var err error
+
+		if msg, err = subForMarket(client, markets[0]); err != nil {
+			return err
+		}
+
+		if err = json.Unmarshal(msg, &st); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	if err := doAsyncTimeout(sub, handleErr, timeout); err != nil {
+		return err
+	}
+
+	dataCh <- st
+
 	select {
 	case <-stop:
 		return nil
