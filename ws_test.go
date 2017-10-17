@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestBittrexSubscribeOrderBook(t *testing.T) {
+func TestBittrexSubscribeMarkets(t *testing.T) {
 	bt := New("", "")
 	ch := make(chan ExchangeState, 16)
 	errCh := make(chan error)
