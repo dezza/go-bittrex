@@ -10,27 +10,29 @@ func TestBittrexSubscribeOrderBook(t *testing.T) {
 	bt := New("", "")
 	ch := make(chan ExchangeState, 16)
 	errCh := make(chan error)
+	markets := []string{"USDT-BTC", "BTC-ETH", "BTC-ETC"}
 	go func() {
-		var haveInit bool
-		var msgNum int
+		var msgNum, initCount int
 		for st := range ch {
-			haveInit = haveInit || st.Initial
+			if st.Initial {
+				initCount++
+			}
 			msgNum++
-			if msgNum >= 3 {
+			if msgNum >= 7 && initCount == len(markets) {
 				break
 			}
 		}
-		if haveInit {
+		if initCount == len(markets) {
 			errCh <- nil
 		} else {
 			errCh <- errors.New("no initial message")
 		}
 	}()
 	go func() {
-		errCh <- bt.SubscribeExchangeUpdate("USDT-BTC", ch, nil)
+		errCh <- bt.SubscribeMarkets(ch, nil, markets...)
 	}()
 	select {
-	case <-time.After(time.Second * 6):
+	case <-time.After(time.Second * 10):
 		t.Error("timeout")
 	case err := <-errCh:
 		if err != nil {
