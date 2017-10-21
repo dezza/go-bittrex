@@ -131,7 +131,6 @@ func (b *Bittrex) SubscribeSummaryUpdate(markets []string, dataCh chan<- Summary
 
 		parseDeltas(messages, dataCh, m)
 	}
-	defer client.Close()
 
 	connect := func() error { return client.Connect("https", WS_BASE, []string{WS_HUB}) }
 	handleErr := func(err error) {
@@ -141,6 +140,7 @@ func (b *Bittrex) SubscribeSummaryUpdate(markets []string, dataCh chan<- Summary
 	if err := doAsyncTimeout(connect, handleErr, timeout); err != nil {
 		return err
 	}
+	defer client.Close()
 
 	select {
 	case <-stop:
@@ -167,7 +167,6 @@ func (b *Bittrex) SubscribeExchangeUpdate(markets []string, dataCh chan<- Exchan
 
 		parseStates(messages, dataCh, m)
 	}
-	defer client.Close()
 
 	connect := func() error { return client.Connect("https", WS_BASE, []string{WS_HUB}) }
 	handleErr := func(err error) {
@@ -175,6 +174,7 @@ func (b *Bittrex) SubscribeExchangeUpdate(markets []string, dataCh chan<- Exchan
 			client.Close()
 		}
 	}
+	defer client.Close()
 
 	if err := doAsyncTimeout(connect, handleErr, timeout); err != nil {
 		return err
