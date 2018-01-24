@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"github.com/thebotguys/signalr"
 )
 
@@ -27,6 +28,21 @@ type ExchangeState struct {
 	Sells      []OrderUpdate
 	Fills      []Fill
 	Initial    bool
+}
+
+type SummaryState struct {
+	MarketName     string
+	High           decimal.Decimal
+	Low            decimal.Decimal
+	Last           decimal.Decimal
+	Volume         decimal.Decimal
+	BaseVolume     decimal.Decimal
+	Bid            decimal.Decimal
+	Ask            decimal.Decimal
+	OpenBuyOrders  int
+	OpenSellOrders int
+	TimeStamp      string
+	Created        string
 }
 
 // doAsyncTimeout runs f in a different goroutine
